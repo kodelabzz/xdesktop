@@ -2,160 +2,95 @@
 #include <windows.h>
 #include <stdio.h>
 #include <tchar.h>
+#include <oleacc.h>
+
 
 HANDLE hStdin;
 DWORD fdwSaveOldMode;
 
 VOID ErrorExit(LPSTR);
-void HandleMouseEvents();
 VOID KeyEventProc(KEY_EVENT_RECORD);
 VOID MouseEventProc(MOUSE_EVENT_RECORD);
 VOID ResizeEventProc(WINDOW_BUFFER_SIZE_RECORD);
+void InitializeMSAA();
+void ShutdownMSAA();
+void CALLBACK HandleWinEvent(HWINEVENTHOOK hook, DWORD event, HWND hwnd,
+    LONG idObject, LONG idChild,
+    DWORD dwEventThread, DWORD dwmsEventTime);
+
+
+// Global variable.
+HWINEVENTHOOK g_hook;
 
 int main() {
     std::cout << "Hello World!";
 
-    HandleMouseEvents();
+  
+   InitializeMSAA();
 
+   
+   ShutdownMSAA();
 
-
-    return 0;
+   return 0;
 }
-void HandleMouseEvents()
+
+// Initializes COM and sets up the event hook.
+//
+void InitializeMSAA()
 {
-    DWORD cNumRead, fdwMode, i;
-    INPUT_RECORD irInBuf[128];
-    int counter = 0;
+    HRESULT hresult = CoInitialize(NULL);
+    g_hook = SetWinEventHook(
+        EVENT_OBJECT_DRAGENTER, EVENT_OBJECT_DRAGCOMPLETE,  // Range of events (4 to 5).
+        NULL,                                          // Handle to DLL.
+        HandleWinEvent,                                // The callback.
+        0, 0,              // Process and thread IDs of interest (0 = all)
+        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS); // Flags.
+    MSG msg;
 
-    // Get the standard input handle.
-
-    hStdin = GetStdHandle(STD_INPUT_HANDLE);
-    if (hStdin == INVALID_HANDLE_VALUE)
-        ErrorExit(const_cast < LPSTR>("GetStdHandle"));
-
-    // Save the current input mode, to be restored on exit.
-
-    if (!GetConsoleMode(hStdin, &fdwSaveOldMode))
-        ErrorExit(const_cast < LPSTR>("GetConsoleMode"));
-
-    // Enable the window and mouse input events.
-
-    fdwMode = ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT;
-    if (!SetConsoleMode(hStdin, fdwMode))
-        ErrorExit(const_cast < LPSTR>("SetConsoleMode"));
-
-    // Loop to read and handle the next 100 input events.
-    // Loop to read and handle the next 100 input events.
-
-    while (counter++ <= 100)
+    while (GetMessage(&msg, NULL, 0, 0))
     {
-        // Wait for the events.
-
-        if (!ReadConsoleInput(
-            hStdin,      // input buffer handle
-            irInBuf,     // buffer to read into
-            128,         // size of read buffer
-            &cNumRead)) // number of records read
-            ErrorExit(const_cast < LPSTR>("ReadConsoleInput"));
-
-        // Dispatch the events to the appropriate handler.
-
-        for (i = 0; i < cNumRead; i++)
-        {
-            switch (irInBuf[i].EventType)
-            {
-            case KEY_EVENT: // keyboard input
-                KeyEventProc(irInBuf[i].Event.KeyEvent);
-                break;
-
-            case MOUSE_EVENT: // mouse input
-                MouseEventProc(irInBuf[i].Event.MouseEvent);
-                break;
-
-            case WINDOW_BUFFER_SIZE_EVENT: // scrn buf. resizing
-                ResizeEventProc(irInBuf[i].Event.WindowBufferSizeEvent);
-                break;
-
-            case FOCUS_EVENT:  // disregard focus events
-
-            case MENU_EVENT:   // disregard menu events
-                break;
-
-            default:
-                ErrorExit(const_cast < LPSTR>("Unknown event type"));
-                break;
-            }
-        }
-    }
-
-    // Restore input mode on exit.
-
-    SetConsoleMode(hStdin, fdwSaveOldMode);
-}
-
-VOID ErrorExit(LPSTR lpszMessage)
-{
-    fprintf(stderr, "%s\n", lpszMessage);
-
-    // Restore input mode on exit.
-
-    SetConsoleMode(hStdin, fdwSaveOldMode);
-
-    ExitProcess(0);
-}
-
-VOID KeyEventProc(KEY_EVENT_RECORD ker)
-{
-    printf("Key event: ");
-
-    if (ker.bKeyDown)
-        printf("key pressed\n");
-    else printf("key released\n");
-}
-VOID MouseEventProc(MOUSE_EVENT_RECORD mer)
-{
-#ifndef MOUSE_HWHEELED
-#define MOUSE_HWHEELED 0x0008
-#endif
-    printf("Mouse event: ");
-
-    switch (mer.dwEventFlags)
-    {
-    case 0:
-
-        if (mer.dwButtonState == FROM_LEFT_1ST_BUTTON_PRESSED)
-        {
-            printf("left button press \n");
-        }
-        else if (mer.dwButtonState == RIGHTMOST_BUTTON_PRESSED)
-        {
-            printf("right button press \n");
-        }
-        else
-        {
-            printf("button press\n");
-        }
-        break;
-    case DOUBLE_CLICK:
-        printf("double click\n");
-        break;
-    case MOUSE_HWHEELED:
-        printf("horizontal mouse wheel\n");
-        break;
-    case MOUSE_MOVED:
-        printf("mouse moved\n");
-        break;
-    case MOUSE_WHEELED:
-        printf("vertical mouse wheel\n");
-        break;
-    default:
-        printf("unknown\n");
-        break;
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
     }
 }
 
-VOID ResizeEventProc(WINDOW_BUFFER_SIZE_RECORD wbsr)
+// Unhooks the event and shuts down COM.
+//
+void ShutdownMSAA()
 {
-    printf("Resize event\n");
-    printf("Console screen buffer is %d columns by %d rows.\n", wbsr.dwSize.X, wbsr.dwSize.Y);
+    UnhookWinEvent(g_hook);
+    CoUninitialize();
 }
+
+
+// Callback function that handles events.
+//
+void CALLBACK HandleWinEvent(HWINEVENTHOOK hook, DWORD event, HWND hwnd,
+    LONG idObject, LONG idChild,
+    DWORD dwEventThread, DWORD dwmsEventTime)
+{
+    std::cout << "handlewinevent callback";
+
+    IAccessible* pAcc = NULL;
+    VARIANT varChild;
+    HRESULT hr = AccessibleObjectFromEvent(hwnd, idObject, idChild, &pAcc, &varChild);
+    if ((hr == S_OK) && (pAcc != NULL))
+    {
+        BSTR bstrName;
+        pAcc->get_accName(varChild, &bstrName);
+        if (event == EVENT_OBJECT_DRAGENTER)
+        {
+            std::cout<<"Begin: ";
+        }
+        else if (event == EVENT_OBJECT_DRAGCOMPLETE)
+        {
+            std::cout<<"End:   ";
+        }
+
+        printf("%S\n", bstrName);
+        SysFreeString(bstrName);
+        pAcc->Release();
+    }
+}
+
+
