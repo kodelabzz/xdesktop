@@ -3,20 +3,17 @@
 #include <stdio.h>
 #include <tchar.h>
 #include <oleacc.h>
+#include <comdef.h>
+#include <psapi.h> 
+#include <thread>
+#define MAX_PROCESSES 1024 
 
-
-HANDLE hStdin;
-DWORD fdwSaveOldMode;
-
-VOID ErrorExit(LPSTR);
-VOID KeyEventProc(KEY_EVENT_RECORD);
-VOID MouseEventProc(MOUSE_EVENT_RECORD);
-VOID ResizeEventProc(WINDOW_BUFFER_SIZE_RECORD);
 void InitializeMSAA();
-void ShutdownMSAA();
+DWORD GetThreadIDOfListViewControlOwner();
 void CALLBACK HandleWinEvent(HWINEVENTHOOK hook, DWORD event, HWND hwnd,
     LONG idObject, LONG idChild,
     DWORD dwEventThread, DWORD dwmsEventTime);
+DWORD FindProcess(__in_z LPCTSTR lpcszFileName);
 
 
 // Global variable.
@@ -24,28 +21,30 @@ HWINEVENTHOOK g_hook;
 
 int main() {
     std::cout << "Hello World!";
-
-  
-   InitializeMSAA();
-
+    std::thread t1(InitializeMSAA);
+    
+    //InitializeMSAA();
+    t1.join();
    
-   ShutdownMSAA();
 
-   return 0;
+    return 0;
 }
 
 // Initializes COM and sets up the event hook.
 //
 void InitializeMSAA()
 {
+    DWORD pid = FindProcess("explorer.exe");
+    DWORD threadId= GetThreadIDOfListViewControlOwner();
+
     HRESULT hresult = CoInitialize(NULL);
     g_hook = SetWinEventHook(
-        EVENT_OBJECT_DRAGENTER, EVENT_OBJECT_DRAGCOMPLETE,  // Range of events (4 to 5).
+        EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_DRAGCOMPLETE,
         NULL,                                          // Handle to DLL.
         HandleWinEvent,                                // The callback.
-        0, 0,              // Process and thread IDs of interest (0 = all)
-        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS); // Flags.
-    MSG msg;
+        pid, threadId,              // Process and thread IDs of interest (0 = all)
+        WINEVENT_OUTOFCONTEXT); // Flags.
+        MSG msg;
 
     while (GetMessage(&msg, NULL, 0, 0))
     {
@@ -54,12 +53,15 @@ void InitializeMSAA()
     }
 }
 
-// Unhooks the event and shuts down COM.
-//
-void ShutdownMSAA()
+DWORD GetThreadIDOfListViewControlOwner()
 {
-    UnhookWinEvent(g_hook);
-    CoUninitialize();
+    DWORD threadId;
+    HWND hWnd = FindWindow(_T("Progman"), _T("Program Manager"));
+    HWND hChildWnd = FindWindowEx(hWnd, NULL, _T("SHELLDLL_DefView"), NULL);
+    HWND hDesktopWnd = FindWindowEx(hChildWnd, NULL, _T("SysListView32"), NULL);
+
+    threadId = GetWindowThreadProcessId(hDesktopWnd, NULL);
+    return threadId;
 }
 
 
@@ -69,7 +71,7 @@ void CALLBACK HandleWinEvent(HWINEVENTHOOK hook, DWORD event, HWND hwnd,
     LONG idObject, LONG idChild,
     DWORD dwEventThread, DWORD dwmsEventTime)
 {
-    std::cout << "handlewinevent callback";
+    //std::cout << "handlewinevent callback";
 
     IAccessible* pAcc = NULL;
     VARIANT varChild;
@@ -78,19 +80,63 @@ void CALLBACK HandleWinEvent(HWINEVENTHOOK hook, DWORD event, HWND hwnd,
     {
         BSTR bstrName;
         pAcc->get_accName(varChild, &bstrName);
-        if (event == EVENT_OBJECT_DRAGENTER)
+        if (event == EVENT_OBJECT_LOCATIONCHANGE)
         {
-            std::cout<<"Begin: ";
+            //std::cout<<"Begin: EVENT_OBJECT_LOCATIONCHANGE " << bstrName;
+            std::wstring ws(bstrName, SysStringLen(bstrName));
+            if (!ws.compare(L"Drag"))
+            {
+                std::cout << "object dragged ";
+            }
+           /* printf("%S\n", bstrName);*/
+           
         }
-        else if (event == EVENT_OBJECT_DRAGCOMPLETE)
-        {
-            std::cout<<"End:   ";
-        }
-
-        printf("%S\n", bstrName);
+            
         SysFreeString(bstrName);
         pAcc->Release();
     }
 }
+
+DWORD FindProcess(__in_z LPCTSTR lpcszFileName)
+{
+    LPDWORD lpdwProcessIds;
+    LPTSTR  lpszBaseName;
+    HANDLE  hProcess;
+    DWORD   i, cdwProcesses, dwProcessId = 0;
+
+    lpdwProcessIds = (LPDWORD)HeapAlloc(GetProcessHeap(), 0, MAX_PROCESSES * sizeof(DWORD));
+    if (lpdwProcessIds != NULL)
+    {
+        if (EnumProcesses(lpdwProcessIds, MAX_PROCESSES * sizeof(DWORD), &cdwProcesses))
+        {
+            lpszBaseName = (LPTSTR)HeapAlloc(GetProcessHeap(), 0, MAX_PATH * sizeof(TCHAR));
+            if (lpszBaseName != NULL)
+            {
+                cdwProcesses /= sizeof(DWORD);
+                for (i = 0; i < cdwProcesses; i++)
+                {
+                    hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, lpdwProcessIds[i]);
+                    if (hProcess != NULL)
+                    {
+                        if (GetModuleBaseName(hProcess, NULL, lpszBaseName, MAX_PATH) > 0)
+                        {
+                            if (!lstrcmpi(lpszBaseName, lpcszFileName))
+                            {
+                                dwProcessId = lpdwProcessIds[i];
+                                CloseHandle(hProcess);
+                                break;
+                            }
+                        }
+                        CloseHandle(hProcess);
+                    }
+                }
+                HeapFree(GetProcessHeap(), 0, (LPVOID)lpszBaseName);
+            }
+        }
+        HeapFree(GetProcessHeap(), 0, (LPVOID)lpdwProcessIds);
+    }
+    return dwProcessId;
+}
+
 
 
