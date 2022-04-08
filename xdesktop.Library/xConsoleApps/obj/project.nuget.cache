@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "HwVMlxrIzAEupbPzxt00QEJwuFmH7S2JSVV7UReChuIS9CYJCLj7KQek0VwUXsUhW8Et7C0SGQfCRu5CwMVN8A==",
+  "success": true,
+  "projectFilePath": "C:\\work\\learn\\projects\\xdesktop\\xdesktop.Library\\xConsoleApps\\xConsoleApps.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\KAnurag.CORPDOM\\.nuget\\packages\\microsoft.netcore.app.host.win-x64\\5.0.12\\microsoft.netcore.app.host.win-x64.5.0.12.nupkg.sha512"
+  ],
+  "logs": []
+}

@@ -19,13 +19,19 @@ DWORD FindProcess(__in_z LPCTSTR lpcszFileName);
 // Global variable.
 HWINEVENTHOOK g_hook;
 
+
 int main() {
     std::cout << "Hello World!";
     std::thread t1(InitializeMSAA);
     
     //InitializeMSAA();
-    t1.join();
-   
+    //t1.join();
+
+    std::cout << "in main";
+    while (true)
+    {
+       
+    }
 
     return 0;
 }
@@ -39,7 +45,7 @@ void InitializeMSAA()
 
     HRESULT hresult = CoInitialize(NULL);
     g_hook = SetWinEventHook(
-        EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_DRAGCOMPLETE,
+        EVENT_OBJECT_SHOW,EVENT_OBJECT_LOCATIONCHANGE,
         NULL,                                          // Handle to DLL.
         HandleWinEvent,                                // The callback.
         pid, threadId,              // Process and thread IDs of interest (0 = all)
